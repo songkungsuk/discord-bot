@@ -5,6 +5,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const playdl = require('play-dl');
 const fs = require('fs');
 const axios = require('axios');
+const MapleStoryAPI = require('./mapleStroyAPI');
 require('dotenv').config();
 
 // 클라이언트 설정
@@ -32,102 +33,6 @@ client.once('ready', () => {
     client.user.setActivity('!도움말 명령어를 입력해보세요', { type: 'PLAYING' });
     deployCommands();
 });
-
-
-// Nexon API 설정
-const baseUrl = 'https://open.api.nexon.com/maplestory/v1';
-const nexonUrlList = [
-    '/character/basic',
-    '/character/popularity',
-    '/character/stat',
-    '/character/hyper-stat',
-    '/character/propensity',
-    '/character/ablility',
-    '/character/item-equipment',
-    '/character/cashitem-equipment',
-    '/character/symbol-equipment',
-    '/character/set-effect',
-    '/character/beauty-equipment',
-    '/character/android-equipment',
-    '/character/pet-equpment',
-    '/character/link-skill',
-    '/character/vmatrix',
-    '/character/hexamatrix',
-    '/character/hexamatrix-stat',
-    '/character/dojang',
-]
-
-async function getOcid(character_name, url = 'https://open.api.nexon.com/maplestory/v1/id?') {
-
-    console.log(character_name);
-    try {
-        const response = await axios.get(url + 'character_name=' + character_name, {
-            headers: {
-                "x-nxopen-api-key": process.env.NEXON_API_KEY
-            }
-        });
-        console.log(response);
-        return response.data.ocid;
-    } catch (error) {
-        console.log(error);
-    }
-}
-
-/**
- * 
- * @param {*} url  // url 
- * @param {*} ocid // use getOcid function
- */
-async function getOcidInfo(ocid, url) {
-    try {
-        const response = await axios.get(baseUrl + url + '?ocid=' + ocid, {
-            headers: {
-                "x-nxopen-api-key": process.env.NEXON_API_KEY
-            }
-        });
-        return response.data;
-    } catch (error) {
-        console.log(error);
-    }
-}
-
-async function getChacractorInfo(character_name, message) {
-    try {
-        const ocid = await getOcid(character_name);
-        const basic = await getOcidInfo(ocid, nexonUrlList[0]);
-        const popularity = await getOcidInfo(ocid, nexonUrlList[1]);
-        // const stat = await getOcidInfo(ocid, nexonUrlList[2]);
-        // const hyperStat = await getOcidInfo(ocid, nexonUrlList[3]);
-        // const propensity = await getOcidInfo(ocid, nexonUrlList[4]);
-        // const ablilty = await getOcidInfo(ocid, nexonUrlList[5]);
-        // const itemEquipment = await getOcidInfo(ocid, nexonUrlList[6]);
-        // const cashItemEquipment = await getOcidInfo(ocid, nexonUrlList[7]);
-        // const symbolEquipment = await getOcidInfo(ocid, nexonUrlList[8]);
-        // const setEffect = await getOcidInfo(ocid, nexonUrlList[9]);
-        // const beautyEquipment = await getOcidInfo(ocid, nexonUrlList[10]);
-        // const androidEquipment = await getOcidInfo(ocid, nexonUrlList[11]);
-        // const petEquipment = await getOcidInfo(ocid, nexonUrlList[12]);
-        // const linkSkill = await getOcidInfo(ocid, nexonUrlList[13]);
-        // const vmatrix = await getOcidInfo(ocid, nexonUrlList[14]);
-        // const hexamatrix = await getOcidInfo(ocid, nexonUrlList[15]);
-        // const hexamatrixStat = await getOcidInfo(ocid, nexonUrlList[16]);
-        // const dojang = await getOcidInfo(ocid, nexonUrlList[17]);
-
-        // 나머지는 data를 직접 보면서 다루어야함 
-        // `
-        //     조회 날짜 ${basic.date}
-        //     직업 : ${basic.character_class} / 월드 : ${basic.world_name} / 레벨 : ${basic.character_level}
-        //     경험치 : ${basic.character_exp_rate} / 길드 : ${basic.character_guild_name} / 인기도 : ${popularity.popularity}
-        //     ${basic.character_image}
-        //     최근 7일간 로그인 : ${basic.access_flag ? '접속' : '미접속'}
-        //     해방 퀘스트 클리어 여부 : ${basic.liberation_quest_clear_flag ? '완료' : '미완료'}
-        // `
-    } catch (error) {
-        console.log(error);
-        message.reply('서버가 점검중이거나 캐릭터가 존재하지 않습니다.');
-    }
-
-}
 
 // 메시지 처리
 client.on('messageCreate', async (message) => {
@@ -186,19 +91,15 @@ client.on('messageCreate', async (message) => {
         else if (command === 'tts') {
             textToSpeech(message, args);
         }
-        else if (command === 'name' || command === '이름' || command === 'test') {
+        else if (command === 'name' || command === '이름') {
             if (!args.length && command !== 'test') {
                 return message.reply('닉네임을 입력해주세요!');
             }
 
-            let charactorName = args.join(' ');
-            if(!charactorName){
-                charactorName = '전한녁';
-            }
-            getChacractorInfo(charactorName, message);
+            const charactorName = args.join(' ');
+            maplestoryAPI(charactorName, message);
         }
 
-        console.log(message);
     }
 
     // AI 답변 처리 (명령어가 아닌 일반 메시지일 경우)
@@ -544,6 +445,27 @@ async function textToSpeech(message, args) {
     }
 }
 
+// Nexon API
+async function maplestoryAPI(characterName, message) {
+    try {
+        const api = new MapleStoryAPI();
+
+        // 1. 단일 캐릭터 전체 정보 조회
+        // 모든 필요한 정보를 조회 (200ms 딜레이로 API 제한 방지)
+        const info = await api.getAllCharacterInfo(characterName, [
+            'basic', 'popularity', 'stat', 'hyperStat', 'ability',
+            'itemEquipment', 'cashItemEquipment', 'beautyEquipment',
+            'petEquipment', 'linkSkill', 'hexamatrix', 'dojang'
+        ], 200); // 200ms 딜레이 설정
+
+        // 2. 포맷팅된 정보 출력
+        message.reply(api.formatCharacterInfo(info));
+        // console.log(api.formatCharacterInfo(info));
+    } catch (error) {
+        console.error('오류 발생:', error.message);
+        message.reply(error.message);
+    }
+}
 
 // 명령어 정의
 const commands = [
