@@ -4,6 +4,7 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const playdl = require('play-dl');
 const fs = require('fs');
+const axios = require('axios');
 require('dotenv').config();
 
 // 클라이언트 설정
@@ -32,6 +33,102 @@ client.once('ready', () => {
     deployCommands();
 });
 
+
+// Nexon API 설정
+const baseUrl = 'https://open.api.nexon.com/maplestory/v1';
+const nexonUrlList = [
+    '/character/basic',
+    '/character/popularity',
+    '/character/stat',
+    '/character/hyper-stat',
+    '/character/propensity',
+    '/character/ablility',
+    '/character/item-equipment',
+    '/character/cashitem-equipment',
+    '/character/symbol-equipment',
+    '/character/set-effect',
+    '/character/beauty-equipment',
+    '/character/android-equipment',
+    '/character/pet-equpment',
+    '/character/link-skill',
+    '/character/vmatrix',
+    '/character/hexamatrix',
+    '/character/hexamatrix-stat',
+    '/character/dojang',
+]
+
+async function getOcid(character_name, url = 'https://open.api.nexon.com/maplestory/v1/id?') {
+
+    console.log(character_name);
+    try {
+        const response = await axios.get(url + 'character_name=' + character_name, {
+            headers: {
+                "x-nxopen-api-key": process.env.NEXON_API_KEY
+            }
+        });
+        console.log(response);
+        return response.data.ocid;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+/**
+ * 
+ * @param {*} url  // url 
+ * @param {*} ocid // use getOcid function
+ */
+async function getOcidInfo(ocid, url) {
+    try {
+        const response = await axios.get(baseUrl + url + '?ocid=' + ocid, {
+            headers: {
+                "x-nxopen-api-key": process.env.NEXON_API_KEY
+            }
+        });
+        return response.data;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function getChacractorInfo(character_name, message) {
+    try {
+        const ocid = await getOcid(character_name);
+        const basic = await getOcidInfo(ocid, nexonUrlList[0]);
+        const popularity = await getOcidInfo(ocid, nexonUrlList[1]);
+        // const stat = await getOcidInfo(ocid, nexonUrlList[2]);
+        // const hyperStat = await getOcidInfo(ocid, nexonUrlList[3]);
+        // const propensity = await getOcidInfo(ocid, nexonUrlList[4]);
+        // const ablilty = await getOcidInfo(ocid, nexonUrlList[5]);
+        // const itemEquipment = await getOcidInfo(ocid, nexonUrlList[6]);
+        // const cashItemEquipment = await getOcidInfo(ocid, nexonUrlList[7]);
+        // const symbolEquipment = await getOcidInfo(ocid, nexonUrlList[8]);
+        // const setEffect = await getOcidInfo(ocid, nexonUrlList[9]);
+        // const beautyEquipment = await getOcidInfo(ocid, nexonUrlList[10]);
+        // const androidEquipment = await getOcidInfo(ocid, nexonUrlList[11]);
+        // const petEquipment = await getOcidInfo(ocid, nexonUrlList[12]);
+        // const linkSkill = await getOcidInfo(ocid, nexonUrlList[13]);
+        // const vmatrix = await getOcidInfo(ocid, nexonUrlList[14]);
+        // const hexamatrix = await getOcidInfo(ocid, nexonUrlList[15]);
+        // const hexamatrixStat = await getOcidInfo(ocid, nexonUrlList[16]);
+        // const dojang = await getOcidInfo(ocid, nexonUrlList[17]);
+
+        // 나머지는 data를 직접 보면서 다루어야함 
+        // `
+        //     조회 날짜 ${basic.date}
+        //     직업 : ${basic.character_class} / 월드 : ${basic.world_name} / 레벨 : ${basic.character_level}
+        //     경험치 : ${basic.character_exp_rate} / 길드 : ${basic.character_guild_name} / 인기도 : ${popularity.popularity}
+        //     ${basic.character_image}
+        //     최근 7일간 로그인 : ${basic.access_flag ? '접속' : '미접속'}
+        //     해방 퀘스트 클리어 여부 : ${basic.liberation_quest_clear_flag ? '완료' : '미완료'}
+        // `
+    } catch (error) {
+        console.log(error);
+        message.reply('서버가 점검중이거나 캐릭터가 존재하지 않습니다.');
+    }
+
+}
+
 // 메시지 처리
 client.on('messageCreate', async (message) => {
     // 봇이 보낸 메시지는 무시
@@ -45,14 +142,15 @@ client.on('messageCreate', async (message) => {
         // 도움말 명령어
         if (command === '도움말') {
             const helpMessage = `
-**📚 봇 명령어 목록**
+    **📚 봇 명령어 목록**
 !도움말 - 명령어 목록을 보여줍니다
 !재생 [노래 제목 또는 URL] - 음악을 재생합니다
 !스킵 - 현재 재생 중인 노래를 건너뜁니다
 !정지 - 음악 재생을 중지하고 음성 채널에서 나갑니다
 !ai [질문] - AI에게 질문합니다
 !tts [텍스트] - 텍스트를 음성으로 변환합니다
-      `;
+!name [캐릭터명] - 메이플 스토리 캐릭터 정보를 검색합니다.
+`;
             message.channel.send(helpMessage);
         }
         // 음악 재생 명령어
@@ -87,6 +185,17 @@ client.on('messageCreate', async (message) => {
         // TTS 명령어
         else if (command === 'tts') {
             textToSpeech(message, args);
+        }
+        else if (command === 'name' || command === '이름' || command === 'test') {
+            if (!args.length && command !== 'test') {
+                return message.reply('닉네임을 입력해주세요!');
+            }
+
+            let charactorName = args.join(' ');
+            if(!charactorName){
+                charactorName = '전한녁';
+            }
+            getChacractorInfo(charactorName, message);
         }
 
         console.log(message);
