@@ -157,7 +157,7 @@ class MapleStoryAPI {
         const linkSkill = info.linkSkill || { link_skill: [] };
         const hexamatrix = info.hexamatrix || { hexa_core_equipment: [] };
         const dojang = info.dojang || { dojang_best_floor: 0, dojang_best_time: 0 };
-
+        const symbolEquipment = info.symbolEquipment || { symbol: 'no info' };
         // 주요 스탯 추출
         const findStat = (statName) => {
             const found = stat.final_stat?.find(s => s.stat_name === statName);
@@ -188,72 +188,119 @@ class MapleStoryAPI {
 
             if (primaryItems.length > 0) {
                 primaryItems.forEach(item => {
-                    result += `\n▶ ${item.item_equipment_slot}: ${item.item_name} [${item.potential_option_grade}]{${item.additional_potential_option_grade}} (${item.starforce}성)`;
+                    result += `\n▶ ${item.item_equipment_slot}: ${item.item_name}  [${item.potential_option_grade ? item.potential_option_grade : '잠재능력 없음'}][${item.additional_potential_option_grade ? item.additional_potential_option_grade : '에디셔널 없음'}] (${item.starforce}성)`;
                 });
             } else {
                 result += `\n▶ 장비 정보가 없습니다.`;
             }
         }
 
+        // 심볼 정보
+        if (symbolEquipment.symbol && symbolEquipment.symbol.length > 0) {
+            result += `\n\n◈ 심볼 정보 ◈ \n`;
+
+            // 심볼 표시 
+            const symbol = symbolEquipment.symbol
+
+            if (symbol.length > 0) {
+                symbol.forEach((item, index) => {
+                    const symbolRate = item.symbol_growth_count / (item.symbol_growth_count + item.symbol_require_growth_count)
+                    result += `▶ ${item.symbol_name}: Lv. ${item.symbol_level} [${symbolRate.toFixed(2) * 100} %])  ${index % 2 === 1 ? '\n' : '  '}`;
+                });
+            } else {
+                result += `\n▶ 심볼 정보가 없습니다.`;
+            }
+        }
+
         // 캐시 아이템 정보
-        if (cashItemEquipment.cash_item_equipment && cashItemEquipment.cash_item_equipment.length > 0) {
+        if (cashItemEquipment.cash_item_equipment_base && cashItemEquipment.cash_item_equipment_base.length > 0) {
             result += `\n\n◈ 캐시 아이템 ◈`;
 
-            // 대표 캐시 아이템 5개만 표시
-            const primaryCashItems = cashItemEquipment.cash_item_equipment.slice(0, 5);
+            // Base 캐시 아이템 표시
+            const primaryCashItems = cashItemEquipment.cash_item_equipment_base;
 
             primaryCashItems.forEach(item => {
-                result += `\n▶ ${item.cash_item_slot}: ${item.cash_item_name}`;
+                result += `\n▶ ${item.cash_item_equipment_slot}: ${item.cash_item_name}`;
             });
         }
+
+        // 프리셋 캐시 아이템 정보
+        if (cashItemEquipment.cash_item_equipment_preset_1 && cashItemEquipment.cash_item_equipment_preset_1.length > 0) {
+            result += `\n\n◈ 프리셋 1 캐시 아이템 ◈`;
+
+            // Preset 캐시 아이템 표시
+            const primaryCashItems = cashItemEquipment.cash_item_equipment_preset_1;
+
+            primaryCashItems.forEach(item => {
+                result += `\n▶ ${item.cash_item_equipment_slot}: ${item.cash_item_name}`;
+            });
+        }
+
+        if (cashItemEquipment.cash_item_equipment_preset_2 && cashItemEquipment.cash_item_equipment_preset_2.length > 0) {
+            result += `\n\n◈ 프리셋 2 캐시 아이템 ◈`;
+
+            // Preset 캐시 아이템 표시
+            const primaryCashItems = cashItemEquipment.cash_item_equipment_preset_2;
+
+            primaryCashItems.forEach(item => {
+                result += `\n▶ ${item.cash_item_equipment_slot}: ${item.cash_item_name}`;
+            });
+        }
+
+        if (cashItemEquipment.cash_item_equipment_preset_3 && cashItemEquipment.cash_item_equipment_preset_3.length > 0) {
+            result += `\n\n◈ 프리셋 3 캐시 아이템 ◈`;
+
+            // Preset 캐시 아이템 표시
+            const primaryCashItems = cashItemEquipment.cash_item_equipment_preset_3;
+
+            primaryCashItems.forEach(item => {
+                result += `\n▶ ${item.cash_item_equipment_slot}: ${item.cash_item_name}`;
+            });
+        }
+
+        // 캐시아이템 정보 끝
 
         // 뷰티 정보
         if (beautyEquipment) {
             result += `\n\n◈ 뷰티 정보 ◈`;
-            if (beautyEquipment.hair_name) {
-                result += `\n▶ 헤어: ${beautyEquipment.hair_name}`;
+            if (beautyEquipment.character_hair) {
+                result += `\n▶ 헤어: ${beautyEquipment.character_hair.hair_name}`;
             }
-            if (beautyEquipment.face_name) {
-                result += `\n▶ 성형: ${beautyEquipment.face_name}`;
+            if (beautyEquipment.character_face) {
+                result += `\n▶ 성형: ${beautyEquipment.character_face.face_name}`;
             }
-            if (beautyEquipment.skin_name) {
-                result += `\n▶ 피부: ${beautyEquipment.skin_name}`;
-            }
-            if (!beautyEquipment.hair_name && !beautyEquipment.face_name && !beautyEquipment.skin_name) {
-                result += `\n▶ 뷰티 정보가 없습니다.`;
+            if (beautyEquipment.character_skin) {
+                result += `\n▶ 피부: ${beautyEquipment.character_skin.skin_name}`;
             }
         }
 
         // 펫 정보
         result += `\n\n◈ 펫 장착 정보 ◈`;
-        const pets = [petEquipment.pet_1, petEquipment.pet_2, petEquipment.pet_3].filter(Boolean);
+        const pets = [petEquipment.pet_1_name, petEquipment.pet_2_name, petEquipment.pet_3_name].filter(Boolean);
 
         if (pets.length > 0) {
-            pets.forEach((pet, index) => {
-                result += `\n▶ 펫 ${index + 1}: ${pet.pet_name} (Lv.${pet.pet_level})`;
-                if (pet.pet_nickname) {
-                    result += ` - ${pet.pet_nickname}`;
-                }
+            pets.forEach((pet_name, index) => {
+                result += `\n▶ 펫 ${index + 1}: ${pet_name} `;
             });
         } else {
             result += `\n▶ 장착된 펫이 없습니다.`;
         }
 
         // 링크 스킬 정보
-        if (linkSkill.link_skill && linkSkill.link_skill.length > 0) {
+        if (linkSkill.character_link_skill && linkSkill.character_link_skill.length > 0) {
             result += `\n\n◈ 링크 스킬 ◈`;
 
-            linkSkill.link_skill.forEach(skill => {
+            linkSkill.character_link_skill.forEach(skill => {
                 result += `\n▶ ${skill.skill_name} (Lv.${skill.skill_level}) - ${skill.skill_description}`;
             });
         }
 
         // 헥사 매트릭스 정보
-        if (hexamatrix.hexa_core_equipment && hexamatrix.hexa_core_equipment.length > 0) {
+        if (hexamatrix.character_hexa_core_equipment && hexamatrix.character_hexa_core_equipment.length > 0) {
             result += `\n\n◈ 헥사 매트릭스 ◈`;
 
-            // 대표 헥사 코어 5개만 표시
-            const primaryCores = hexamatrix.hexa_core_equipment.slice(0, 5);
+            // 헥사 코어 표시
+            const primaryCores = hexamatrix.character_hexa_core_equipment;
 
             primaryCores.forEach(core => {
                 result += `\n▶ ${core.hexa_core_name} (Lv.${core.hexa_core_level})`;

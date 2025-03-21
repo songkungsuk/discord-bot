@@ -100,6 +100,59 @@ client.on('messageCreate', async (message) => {
             maplestoryAPI(charactorName, message);
         }
 
+        else if (command === '노래') {
+            try {
+                const songLyrics = `
+                오늘도 메벤을 눈팅하는 신창섭 😎
+                본섭 유저들이 리선족 때문에 힘들다며 지갑을 닫겠다고 협박하네 😤
+                늘 있는 WWE 유저들 E탈 무서워 E 악물고 무시해보려고 하지만 😬
+                과징금 크악 씨이빨 바로 리부트 정상화 OUT!! 🔥
+                
+                민심 돌리기 들어가는 신창섭 (캬~) 👑
+                "리선족 척결" 다섯 글자에 환호성 🙌
+                역시 정상화는 신 창 섭 ✨
+                드디어 대창섭이 메이플을 정상화 하네 🌟
+                
+                어느날 도입된 인벤 인장 시스템 🖼️
+                고래 스펙 구경 좀 해볼까? 🐳
+                어 씨!발 눈에 보이는건 5000 플 마 단 😱
+                아니 이럴 수 없어 😰
+                
+                슬슬 걱정되지만 침착하게 인장을 살펴보는데 🧐
+                여길봐도 저길봐도 5000 플마단 밖에 없네 👀
+                인장 주작은 뭐야 씨 발 년 🤬
+                게임이 건강해질 때까지 정상화 패치를 해줬지만 💊
+                
+                돌아온건 매출 하락 📉
+                쌀숭이들 안 되겠다 밸런스 패치 SHOUT! 📢
+                네 직업? 다음 패치 기대해 👨‍💻
+                과징금은 BM으로 다시 뜯으면 그만이야 💰
+                
+                대체 5000 플마로 무슨 콘텐츠를 즐기겠다고 🤔
+                계속 콘텐츠를 요구하는 건지도 모르겠지만 ❓
+                출시해줘도 메소 쌀먹이 유일한 너희들의 콘텐츠 🌾
+                사냥 편하게 해줬더니 거탐 온다고 지랄 😡
+                
+                입맛 맞춰주기 참 어렵네 😮‍💨
+                과징금 크악 씨이빨 바로 리부트 정상화 OUT!! 💥
+                민심 돌리기 들어가는 신창섭 (캬~) 😎
+                "리선족 척결" 다섯 글자에 환호성 👏
+                
+                드디어 대창섭이 메이플을 정상화 한다 🏆
+                하지만 여길봐도 저길봐도 5000 플마단 밖에 없네 👁️
+                인장 주작은 뭐야 씨 발 년 🤯
+                게임이 건강해질 때까지 정상화 패치를 해줬지만 💉
+                
+                돌아온건 매출 하락 📉
+                씨이빨 🦷`;
+
+                await message.channel.send(songLyrics);
+            } catch (error) {
+                console.error('노래 명령어 실행 중 오류 발생:', error);
+                await message.channel.send('노래 가사를 표시하는 중에 오류가 발생했습니다.');
+            }
+        }
+
     }
 
     // AI 답변 처리 (명령어가 아닌 일반 메시지일 경우)
@@ -455,12 +508,24 @@ async function maplestoryAPI(characterName, message) {
         const info = await api.getAllCharacterInfo(characterName, [
             'basic', 'popularity', 'stat', 'hyperStat', 'ability',
             'itemEquipment', 'cashItemEquipment', 'beautyEquipment',
-            'petEquipment', 'linkSkill', 'hexamatrix', 'dojang'
+            'petEquipment', 'linkSkill', 'hexamatrix', 'dojang', 'symbolEquipment'
         ], 200); // 200ms 딜레이 설정
 
+        // 메시지 길이 제한(2000자)에 맞게 분할
+        const maxLength = 1900; // 여유를 두고 1900자로 설정
+        const parts = [];
+        const api_info = api.formatCharacterInfo(info);
+
+        for (let i = 0; i < api_info.length; i += maxLength) {
+            parts.push(api_info.substring(i, i + maxLength));
+        }
+
         // 2. 포맷팅된 정보 출력
-        message.reply(api.formatCharacterInfo(info));
-        // console.log(api.formatCharacterInfo(info));
+        // 분할된 메시지 순차적으로 전송
+        for (const part of parts) {
+            await message.channel.send(part);
+        }
+
     } catch (error) {
         console.error('오류 발생:', error.message);
         message.reply(error.message);
