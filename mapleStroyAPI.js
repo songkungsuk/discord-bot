@@ -176,7 +176,7 @@ class MapleStoryAPI {
 ▶ 길드: ${basic.character_guild_name || '없음'} / 인기도: ${popularity.popularity}
 ▶ 스탯공격력: ${mainStat} / 데미지: ${damage}% / 보스 데미지: ${bossDamage}%
 ▶ 최근 7일간 로그인: ${basic.access_flag ? '접속' : '미접속'}
-▶ 해방 퀘스트: ${basic.liberation_quest_clear_flag ? '완료' : '미완료'}
+▶ 해방 퀘스트: ${basic.liberation_quest_clear_flag === 'true' ? '완료' : '미완료'}
 `;
 
         // 장비 아이템 정보
@@ -291,7 +291,7 @@ class MapleStoryAPI {
             result += `\n\n◈ 링크 스킬 ◈`;
 
             linkSkill.character_link_skill.forEach(skill => {
-                result += `\n▶ ${skill.skill_name} (Lv.${skill.skill_level}) - ${skill.skill_description}`;
+                result += `\n▶ ${skill.skill_name} (Lv.${skill.skill_level})`;
             });
         }
 

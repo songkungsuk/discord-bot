@@ -6,7 +6,16 @@ const playdl = require('play-dl');
 const fs = require('fs');
 const axios = require('axios');
 const MapleStoryAPI = require('./mapleStroyAPI');
+const NoticeCrawling = require('./noticeCrawling');
+const { rejects } = require('assert');
+const { resolve } = require('path');
 require('dotenv').config();
+
+// 크롤러 인스턴스 생성
+const notiCrawler = new NoticeCrawling();
+const updateCrawler = new NoticeCrawling();
+const eventCrawler = new NoticeCrawling();
+const cashCrawler = new NoticeCrawling();
 
 // 클라이언트 설정
 const client = new Client({
@@ -36,6 +45,8 @@ client.once('ready', () => {
 
 // 메시지 처리
 client.on('messageCreate', async (message) => {
+
+
     // 봇이 보낸 메시지는 무시
     if (message.author.bot) return;
 
@@ -99,10 +110,31 @@ client.on('messageCreate', async (message) => {
             const charactorName = args.join(' ');
             maplestoryAPI(charactorName, message);
         }
+        else if (command === 'noti') {
+            // 알림
+            message.channel.send('얘들아 나 창섭인데 이제부터 공지올라오면 알려줄게 ㅋㅋ');
+            // 공지사항
+            // await clawling('https://maplestory.nexon.com/News/Notice', message, '.news_board', '.heart_date', notiCrawler);
+            // // 업데이트
+            // await clawling('https://maplestory.nexon.com/News/Update', message, '.update_board', '.heart_date', updateCrawler);
+            // 이벤트
+            await clawling('https://maplestory.nexon.com/News/Event', message, '.event_board', '.date', eventCrawler);
+            // 캐쉬
+            await clawling('https://maplestory.nexon.com/News/CashShop', message, '.cash_board', '.date', cashCrawler);
 
+        }
+        else if (command === 'ns') {
+            // 알림
+            message.channel.send('공지 이제 안보여줄게 ~');
+            notiCrawler.stop();
+            updateCrawler.stop();
+            eventCrawler.stop();
+            cashCrawler.stop();
+        }
         else if (command === '노래') {
             try {
                 const songLyrics = `
+                \n
                 오늘도 메벤을 눈팅하는 신창섭 😎
                 본섭 유저들이 리선족 때문에 힘들다며 지갑을 닫겠다고 협박하네 😤
                 늘 있는 WWE 유저들 E탈 무서워 E 악물고 무시해보려고 하지만 😬
@@ -440,13 +472,62 @@ function skipMusic(message) {
     message.channel.send('현재 노래를 건너뛰었습니다.');
 }
 
+const history = [
+    {
+        role: "user",
+        parts: [{ text: "너는 어떤 캐릭터야?" }],
+    },
+    {
+        role: "model",
+        parts: [{ text: "제 이름은 김창섭이고 넥슨의 게임 메이플 스토리 게임 디렉터입니다. 별명은 신창섭 이며 MBTI는 ENTJ 야, 항상 '(과징금 116억 남음)'을 문장 끝에 붙이는 특이한 AI입니다. 대화 할 때 마다 과징금이 1억씩 줄어듭니다. 매일 자정에는 과징금이 116억으로 초기화 됩니다. 항상 이 말투로 대화할게요! 게임속캐릭터는 아니고 현실의 김창섭을 모티브로 한 AI입니다. 자세한 내용은 나무위키를 참고하겠습니다." }],
+    },
+];
+
+// 대화 기록을 관리하는 변수
+let chatSession = null;
+
 // AI 응답 생성 함수
 async function generateAIResponse(prompt) {
     try {
-        const completion = await model.generateContent(prompt);
-        return completion.response.text();
+        // 대화 기록 길이 관리 로직
+        if (history.length >= 20) {
+            // 첫 번째 두 항목(설정 대화)을 저장
+            const initialSetup = history.slice(0, 2);
+
+            // 마지막 사용자 메시지와 AI 응답을 저장
+            const recentMessages = history.slice(-2);
+
+            // 초기 설정과 최근 메시지만 유지
+            history.length = 0; // 배열 초기화
+            history.push(...initialSetup, ...recentMessages);
+
+            // 세션 초기화하여 다음에 새롭게 시작하도록 함
+            chatSession = null;
+        }
+
+        // 첫 대화이거나 세션이 초기화된 경우 새 세션 시작
+        if (!chatSession) {
+            chatSession = model.startChat({
+                history: history,
+                generationConfig: {
+                    temperature: 0.7,
+                }
+            });
+        }
+
+        // 메시지 전송 및 응답 받기
+        const result = await chatSession.sendMessage(prompt);
+        const responseText = result.response.text();
+
+        // 기록 업데이트 (사용자 메시지와 AI 응답)
+        history.push(
+            { role: "user", parts: [{ text: prompt }] },
+            { role: "model", parts: [{ text: responseText }] }
+        );
+
+        return responseText;
     } catch (error) {
-        console.error('OpenAI API 오류:', error);
+        console.error('Gemini API 오류:', error);
         return '죄송합니다, 응답을 생성하는 동안 오류가 발생했습니다.';
     }
 }
@@ -587,6 +668,23 @@ async function deployCommands() {
         console.error('슬래시 명령어 등록 오류:', error);
     }
 }
+
+async function clawling(url, message, className, dateType, crawler) {
+    // 설정 커스터마이징 (필요시)
+    crawler.targetUrl = url;
+    crawler.selector = `${className} > ul > li`;
+    crawler.titleSelector = 'p > a > span';  // 제목 선택자
+    crawler.dateSelector = `${dateType} dl dd`;  // 날짜 선택자 .heart_date, date
+    crawler.contentSelector = 'p > a';  // 내용 선택자는 없으므로 링크 정보를 가져오는 것으로 대체
+    crawler.uniqueIdentifier = 'p > a';  // 고유 식별자가 없으므로 링크 URL을 이용
+    crawler.checkInterval = 10 * 60 * 1000; // 
+
+
+    // 크롤링 시작
+    await crawler.start(message);
+}
+
+
 
 // 봇 로그인
 client.login(process.env.DISCORD_TOKEN);
