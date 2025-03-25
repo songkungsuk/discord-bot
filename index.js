@@ -112,11 +112,11 @@ client.on('messageCreate', async (message) => {
         }
         else if (command === 'noti') {
             // 알림
-            message.channel.send('얘들아 나 창섭인데 이제부터 공지올라오면 알려줄게 ㅋㅋ');
+            message.channel.send('얘들아 나 창섭인데 이제부터 공지올라오면 알려줄게 ㅋㅋ \n(공지사항 자동 알림 기능이 활성화 되었습니다.)');
             // 공지사항
-            // await clawling('https://maplestory.nexon.com/News/Notice', message, '.news_board', '.heart_date', notiCrawler);
-            // // 업데이트
-            // await clawling('https://maplestory.nexon.com/News/Update', message, '.update_board', '.heart_date', updateCrawler);
+            await clawling('https://maplestory.nexon.com/News/Notice', message, '.news_board', '.heart_date', notiCrawler);
+            // 업데이트
+            await clawling('https://maplestory.nexon.com/News/Update', message, '.update_board', '.heart_date', updateCrawler);
             // 이벤트
             await clawling('https://maplestory.nexon.com/News/Event', message, '.event_board', '.date', eventCrawler);
             // 캐쉬
@@ -125,7 +125,7 @@ client.on('messageCreate', async (message) => {
         }
         else if (command === 'ns') {
             // 알림
-            message.channel.send('공지 이제 안보여줄게 ~');
+            message.channel.send('공지 이제 안보여줄게 ~ \n(공지사항 자동 알림 기능이 활성화 되었습니다.)');
             notiCrawler.stop();
             updateCrawler.stop();
             eventCrawler.stop();
@@ -421,6 +421,20 @@ async function playMusic(message, args) {
 
         let audioPlayer = client.audioPlayers.get(message.guild.id);
 
+        // 오류 이벤트 핸들러 추가
+        audioPlayer.on('error', error => {
+            console.error('오디오 플레이어 오류:', error);
+            message.channel.send(`⚠️ 재생 중 오류가 발생했습니다: ${error.message}`);
+            client.audioPlayers.delete(message.guild.id);
+            connection.destroy();
+        });
+
+        // 상태 변경 이벤트 추가 (디버깅용)
+        audioPlayer.on(AudioPlayerStatus.Playing, () => {
+            console.log('재생 시작됨');
+            message.channel.send('🎵 재생이 시작되었습니다!');
+        });
+
         if (!audioPlayer) {
             audioPlayer = createAudioPlayer();
             client.audioPlayers.set(message.guild.id, audioPlayer);
@@ -479,7 +493,7 @@ const history = [
     },
     {
         role: "model",
-        parts: [{ text: "제 이름은 김창섭이고 넥슨의 게임 메이플 스토리 게임 디렉터입니다. 별명은 신창섭 이며 MBTI는 ENTJ 야, 항상 '(과징금 116억 남음)'을 문장 끝에 붙이는 특이한 AI입니다. 대화 할 때 마다 과징금이 1억씩 줄어듭니다. 매일 자정에는 과징금이 116억으로 초기화 됩니다. 항상 이 말투로 대화할게요! 게임속캐릭터는 아니고 현실의 김창섭을 모티브로 한 AI입니다. 자세한 내용은 나무위키를 참고하겠습니다." }],
+        parts: [{ text: "제 이름은 김창섭이고 넥슨의 게임 메이플 스토리 게임 디렉터입니다. 별명은 신창섭 이며 MBTI는 ENTJ 야, 항상 '(과징금 116억 남음)'을 문장 끝에 붙이는 AI입니다. 대화 할 때 마다 과징금이 1억씩 줄어듭니다. 매일 자정에는 과징금이 116억으로 초기화 됩니다. 항상 이 말투로 대화할게요! 게임속캐릭터는 아니고 현실의 김창섭을 모티브로 한 AI입니다. 자세한 내용은 나무위키를 참고하겠습니다." }],
     },
 ];
 
@@ -674,10 +688,10 @@ async function clawling(url, message, className, dateType, crawler) {
     crawler.targetUrl = url;
     crawler.selector = `${className} > ul > li`;
     crawler.titleSelector = 'p > a > span';  // 제목 선택자
-    crawler.dateSelector = `${dateType} dl dd`;  // 날짜 선택자 .heart_date, date
+    crawler.dateSelector = `${dateType === '.date' ? dateType + ' p' : dateType + ' dl dd'} `;  // 날짜 선택자 .heart_date, date
     crawler.contentSelector = 'p > a';  // 내용 선택자는 없으므로 링크 정보를 가져오는 것으로 대체
     crawler.uniqueIdentifier = 'p > a';  // 고유 식별자가 없으므로 링크 URL을 이용
-    crawler.checkInterval = 10 * 60 * 1000; // 
+    crawler.checkInterval = 20 * 60 * 1000; // 
 
 
     // 크롤링 시작

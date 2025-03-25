@@ -193,13 +193,13 @@ class NoticeCrawling {
             this.crawledData.lastChecked = new Date().toISOString();
 
             // 게시글 항목 선택
+            const notiType = $(`.con_title`).text().replace(/\s+/g, ' ').trim();
             const postItems = $(this.selector);
             const newPosts = [];
             postItems.each((index, element) => {
                 const postElement = $(element);
                 const linkElement = postElement.find('p > a');
                 const postId = linkElement.attr('href'); // href 속성을 고유 식별자로 사용
-                const type = postElement.find('em > img').attr('alt');
 
                 // 새 글 정보 추출
                 const title = postElement.find(this.titleSelector).text().trim();
@@ -214,13 +214,13 @@ class NoticeCrawling {
                     date: date,
                     crawledAt: new Date().toISOString(),
                     link: linkElement,
-                    notiType: type,
+                    notiType: notiType,
                 };
 
                 this.crawledData.posts.push(newPost);
                 console.log(`크롤링한 글 제목: ${title}`);
 
-                if (newPost.date.includes(this.getToday())) {
+                if (newPost.date.substring(0, 11).includes(this.getToday())) {
                     newPosts.push(newPost);
                 }
 
@@ -247,16 +247,36 @@ class NoticeCrawling {
 
     // 새 글 처리
     processNewPosts(posts, message) {
-        let noticeMsg = posts[0].notiType ? `📢공지사항 정리📢\n\n` : `🎈업데이트 내용 정리🎈\n\n`;
+        let noticeMsg = ``;
+
+        if (posts[0].notiType.includes('공지사항 제목')) {
+            noticeMsg += `📢공지사항 알림\n\n`;
+        } else if (posts[0].notiType.includes('업데이트 제목')) {
+            noticeMsg += `🚙업데이트 소식\n\n`;
+        } else if (posts[0].notiType.includes('이벤트 제목')) {
+            noticeMsg += `🎉이벤트 소식🎉\n\n`;
+        } else if (posts[0].notiType.includes('캐시샵 공지 제목')) {
+            noticeMsg += `✨캐시샵 공지✨\n\n`;
+        }
+
         // 여기에 새 글 처리 로직 추가
         // 예: 알림 전송, 데이터베이스 저장 등
         console.log('새 글 처리 중...');
 
         // 예시: 새 글 세부 정보 출력
         posts.forEach((post, index) => {
-            noticeMsg += `--------------------------\n`;
-            noticeMsg += `${post.notiType ? post.notiType : '[업데이트]'} : ${post.title} \n`;
-            noticeMsg += `${'https://maplestory.nexon.com' + post.link.attr('href')} \n공지 날짜: ${post.date}\n`;
+            noticeMsg += `\n`;
+            if (post.notiType.includes('공지사항 제목')) {
+                noticeMsg += `${post.notiType ? post.notiType : '[공지사항]'} : ${post.title} \n`;
+            } else if (post.notiType.includes('업데이트 제목')) {
+                noticeMsg += `${post.notiType ? post.notiType : '[업데이트]'} : ${post.title} \n`;
+            } else if (post.notiType.includes('이벤트 제목')) {
+                noticeMsg += `${post.notiType ? post.notiType : '[이벤트]'} : ${post.title} \n`;
+            } else if (post.notiType.includes('캐시샵 공지 제목')) {
+                noticeMsg += `${post.notiType ? post.notiType : '[캐시샵]'} : ${post.title} \n`;
+            }
+            noticeMsg += post.title !== post.content ? post.content.replace(/\s+/g, ' ').trim() : '';
+            noticeMsg += `${'https://maplestory.nexon.com' + post.link.attr('href')} \n기간 및 날짜 : ${post.date}\n`;
         });
         noticeMsg += '\n';
         message.channel.send(noticeMsg);
