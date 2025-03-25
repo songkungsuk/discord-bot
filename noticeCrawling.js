@@ -275,7 +275,7 @@ class NoticeCrawling {
             } else if (post.notiType.includes('캐시샵 공지 제목')) {
                 noticeMsg += `${post.notiType ? post.notiType : '[캐시샵]'} : ${post.title} \n`;
             }
-            noticeMsg += post.title !== post.content ? post.content.replace(/\s+/g, ' ').trim() : '';
+            noticeMsg += post.title !== post.content ? post.content.replace(/\s+/g, ' ').trim() + '\n' : '';
             noticeMsg += `${'https://maplestory.nexon.com' + post.link.attr('href')} \n기간 및 날짜 : ${post.date}\n`;
         });
         noticeMsg += '\n';
