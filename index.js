@@ -1,14 +1,19 @@
 // 필요한 패키지 불러오기
+
 const { Client, GatewayIntentBits, Partials, Collection, REST, Routes, ApplicationCommandOptionType } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const playdl = require('play-dl');
-const fs = require('fs');
-const axios = require('axios');
-const MapleStoryAPI = require('./mapleStroyAPI');
-const NoticeCrawling = require('./noticeCrawling');
-const { rejects } = require('assert');
-const { resolve } = require('path');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
+// 음악
+const play = require('play-dl');
+// ai
+const OpenAI = require("openai");
+// Maple
+const MapleStoryAPI = require('./maple/mapleStroyAPI');
+const NoticeCrawling = require('./maple/noticeCrawling');
+// utils
+const { generateAIResponse } = require('./utils/ai');
+const { textToSpeech } = require('./utils/tts');
+const { handleClearCommand, handleUserClearCommand} = require('./utils/clear');
+
 require('dotenv').config();
 
 // 크롤러 인스턴스 생성
@@ -32,21 +37,11 @@ const client = new Client({
 client.commands = new Collection();
 client.audioPlayers = new Map();
 
-// OpenAI 설정
-const genAI = new GoogleGenerativeAI(process.env.OPENAI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
-// 봇이 준비되면 실행
-client.once('ready', () => {
-    console.log(`${client.user.tag} 봇이 온라인 상태입니다!`);
-    client.user.setActivity('!도움말 명령어를 입력해보세요', { type: 'PLAYING' });
-    deployCommands();
-});
+// 음악 큐 설정
+const queue = new Map();
 
 // 메시지 처리
 client.on('messageCreate', async (message) => {
-
-
     // 봇이 보낸 메시지는 무시
     if (message.author.bot) return;
 
@@ -54,6 +49,7 @@ client.on('messageCreate', async (message) => {
     if (message.content.startsWith('!') || message.content.startsWith('/')) {
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
+        const serverQueue = queue.get(message.guild.id);
 
         // 도움말 명령어
         if (command === '도움말') {
@@ -66,19 +62,59 @@ client.on('messageCreate', async (message) => {
 !ai [질문] - AI에게 질문합니다
 !tts [텍스트] - 텍스트를 음성으로 변환합니다
 !name [캐릭터명] - 메이플 스토리 캐릭터 정보를 검색합니다.
+!noti [공지 알림 설정] - 메이플 스토리 홈페이지에 새로운 공지가 나온 경우 알려줍니다.
+!ns [공지 알림 설정 해제] - 공지 알림 설정을 해제 합니다
 `;
             message.channel.send(helpMessage);
         }
         // 음악 재생 명령어
-        else if (command === '재생') {
-            playMusic(message, args);
+        else if (command === 'play') {
+            if (!message.member.voice?.channel) return message.channel.send('Connect to a Voice Channel')
+
+            const connection = joinVoiceChannel({
+                channelId: message.member.voice.channel.id,
+                guildId: message.guild.id,
+                adapterCreator: message.guild.voiceAdapterCreator
+            })
+
+            let arguments = message.content.split('play ')[1].split(' ')[0]
+
+            let stream = await play.stream(arguments);
+
+            /*
+            OR if you want to get info about youtube link and then stream it
+    
+            let yt_info = await play.video_info(args)
+            console.log(yt_info.video_details.title) 
+            let stream = await play.stream_from_info(yt_info)
+            */
+
+            let resource = createAudioResource(stream.stream, {
+                inputType: stream.type
+            })
+
+            let player = createAudioPlayer({
+                behaviors: {
+                    noSubscriber: NoSubscriberBehavior.Play
+                }
+            })
+
+            player.play(resource);
+
+            connection.subscribe(player);
+
+            player.on('error', console.error);
+            player.on('stateChange', (oldState, newState) => {
+                message.channel.send(`🔄 Audio player transitioned from ${oldState.status} to ${newState.status}`); console.log(`Audio player transitioned from ${oldState.status} to ${newState.status}`);
+            });
+            //playMusic(message, args);
         }
         // 음악 정지 명령어
-        else if (command === '정지') {
+        else if (command === 'stop') {
             stopMusic(message);
         }
         // 노래 스킵 명령어
-        else if (command === '스킵') {
+        else if (command === 'skip') {
             skipMusic(message);
         }
         // AI 답변 명령어
@@ -94,9 +130,15 @@ client.on('messageCreate', async (message) => {
                 const response = await generateAIResponse(question);
                 message.reply(response);
             } catch (error) {
-                console.error('AI 응답 생성 오류:', error);
                 message.reply('죄송합니다, 응답을 생성하는 동안 오류가 발생했습니다.');
+                console.error('AI 응답 생성 오류:', error);
             }
+        }
+        else if (command === 'clear' || command === '청소') {
+            handleClearCommand(message, args);
+        }
+        else if (command === 'userclear' || command === '유저청소') {
+            handleUserClearCommand(message, args);
         }
         // TTS 명령어
         else if (command === 'tts') {
@@ -110,8 +152,8 @@ client.on('messageCreate', async (message) => {
             const charactorName = args.join(' ');
             maplestoryAPI(charactorName, message);
         }
+        // 알림
         else if (command === 'noti') {
-            // 알림
             message.channel.send('얘들아 나 창섭인데 이제부터 공지올라오면 알려줄게 ㅋㅋ \n(공지사항 자동 알림 기능이 활성화 되었습니다.)');
             // 공지사항
             await clawling('https://maplestory.nexon.com/News/Notice', message, '.news_board', '.heart_date', notiCrawler);
@@ -123,13 +165,17 @@ client.on('messageCreate', async (message) => {
             await clawling('https://maplestory.nexon.com/News/CashShop', message, '.cash_board', '.date', cashCrawler);
 
         }
+        // 알림 해제
         else if (command === 'ns') {
-            // 알림
+
             message.channel.send('공지 이제 안보여줄게 ~ \n(공지사항 자동 알림 기능이 활성화 되었습니다.)');
             notiCrawler.stop();
             updateCrawler.stop();
             eventCrawler.stop();
             cashCrawler.stop();
+        }
+        else if (command === 'star') {
+          
         }
         else if (command === '노래') {
             try {
@@ -280,101 +326,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// Interaction을 위한 음악 재생 함수
-async function playMusicInteraction(interaction, query) {
-    const voiceChannel = interaction.member.voice.channel;
-
-    // 음성 채널에 있는지 확인
-    if (!voiceChannel) {
-        return interaction.reply('먼저 음성 채널에 참가해주세요!');
-    }
-
-    // 응답 지연 (음악 검색에 시간이 걸릴 수 있음)
-    await interaction.deferReply();
-
-    try {
-        await interaction.followUp(`🔍 **${query}** 검색 중...`);
-
-        // 노래 정보 가져오기
-        let songInfo;
-        if (query.includes('youtube.com') || query.includes('youtu.be')) {
-            // URL인 경우
-            songInfo = await playdl.video_info(query);
-        } else {
-            // 검색어인 경우
-            const searchResults = await playdl.search(query, { limit: 1 });
-            if (!searchResults.length) {
-                return interaction.followUp('검색 결과가 없습니다.');
-            }
-            songInfo = await playdl.video_info(searchResults[0].url);
-        }
-
-        const song = {
-            title: songInfo.video_details.title,
-            url: songInfo.video_details.url,
-        };
-
-        // 음성 채널 연결 및 재생
-        const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: interaction.guild.id,
-            adapterCreator: interaction.guild.voiceAdapterCreator,
-        });
-
-        let audioPlayer = client.audioPlayers.get(interaction.guild.id);
-
-        if (!audioPlayer) {
-            audioPlayer = createAudioPlayer();
-            client.audioPlayers.set(interaction.guild.id, audioPlayer);
-            connection.subscribe(audioPlayer);
-
-            audioPlayer.on(AudioPlayerStatus.Idle, () => {
-                client.audioPlayers.delete(interaction.guild.id);
-                connection.destroy();
-            });
-        }
-
-        const stream = await playdl.stream(song.url);
-        const resource = createAudioResource(stream.stream, {
-            inputType: stream.type,
-        });
-
-        audioPlayer.play(resource);
-
-        interaction.followUp(`🎵 재생 중: **${song.title}**`);
-    } catch (error) {
-        console.error('음악 재생 오류:', error);
-        interaction.followUp('음악 재생 중 오류가 발생했습니다.');
-    }
-}
-
-// Interaction을 위한 음악 정지 함수
-async function stopMusicInteraction(interaction) {
-    const audioPlayer = client.audioPlayers.get(interaction.guild.id);
-
-    if (!audioPlayer) {
-        return interaction.reply('현재 재생 중인 음악이 없습니다.');
-    }
-
-    audioPlayer.stop();
-    client.audioPlayers.delete(interaction.guild.id);
-
-    interaction.reply('음악 재생을 중지했습니다.');
-}
-
-// Interaction을 위한 음악 스킵 함수
-async function skipMusicInteraction(interaction) {
-    const audioPlayer = client.audioPlayers.get(interaction.guild.id);
-
-    if (!audioPlayer) {
-        return interaction.reply('현재 재생 중인 음악이 없습니다.');
-    }
-
-    audioPlayer.stop();
-    interaction.reply('현재 노래를 건너뛰었습니다.');
-}
-
-// 음악 재생 함수
+// playMusic 함수
 async function playMusic(message, args) {
     const voiceChannel = message.member.voice.channel;
 
@@ -391,207 +343,66 @@ async function playMusic(message, args) {
     const query = args.join(' ');
 
     try {
+
         message.channel.send(`🔍 **${query}** 검색 중...`);
 
         // 노래 정보 가져오기
         let songInfo;
         if (query.includes('youtube.com') || query.includes('youtu.be')) {
             // URL인 경우
-            songInfo = await playdl.video_info(query);
+            songInfo = await play.video_info(query);
         } else {
             // 검색어인 경우
-            const searchResults = await playdl.search(query, { limit: 1 });
+            const searchResults = await play.search(query, { limit: 1 });
             if (!searchResults.length) {
                 return message.reply('검색 결과가 없습니다.');
             }
-            songInfo = await playdl.video_info(searchResults[0].url);
+            songInfo = await play.video_info(searchResults[0].url);
         }
 
-        const song = {
-            title: songInfo.video_details.title,
-            url: songInfo.video_details.url,
-        };
-
-        // 음성 채널 연결 및 재생
         const connection = joinVoiceChannel({
             channelId: voiceChannel.id,
             guildId: message.guild.id,
-            adapterCreator: message.guild.voiceAdapterCreator,
+            adapterCreator: message.guild.voiceAdapterCreator
         });
 
-        let audioPlayer = client.audioPlayers.get(message.guild.id);
+        let stream = await play.stream(query)
 
-        // 오류 이벤트 핸들러 추가
-        audioPlayer.on('error', error => {
-            console.error('오디오 플레이어 오류:', error);
-            message.channel.send(`⚠️ 재생 중 오류가 발생했습니다: ${error.message}`);
-            client.audioPlayers.delete(message.guild.id);
-            connection.destroy();
+        /*
+        OR if you want to get info about youtube link and then stream it
+
+        let yt_info = await play.video_info(args)
+        console.log(yt_info.video_details.title) 
+        let stream = await play.stream_from_info(yt_info)
+        */
+
+        let resource = createAudioResource(stream.stream, {
+            inputType: stream.type
+        })
+
+        let player = createAudioPlayer({
+            behaviors: {
+                noSubscriber: NoSubscriberBehavior.Play
+            }
+        })
+
+        player.on('error', console.error);
+        player.on('stateChange', (oldState, newState) => {
+            message.channel.send(`🔄 Audio player transitioned from ${oldState.status} to ${newState.status}`); console.log(`Audio player transitioned from ${oldState.status} to ${newState.status}`);
         });
 
-        // 상태 변경 이벤트 추가 (디버깅용)
-        audioPlayer.on(AudioPlayerStatus.Playing, () => {
-            console.log('재생 시작됨');
-            message.channel.send('🎵 재생이 시작되었습니다!');
-        });
-
-        if (!audioPlayer) {
-            audioPlayer = createAudioPlayer();
-            client.audioPlayers.set(message.guild.id, audioPlayer);
-            connection.subscribe(audioPlayer);
-
-            audioPlayer.on(AudioPlayerStatus.Idle, () => {
-                client.audioPlayers.delete(message.guild.id);
-                connection.destroy();
-            });
-        }
-
-        const stream = await playdl.stream(song.url);
-        const resource = createAudioResource(stream.stream, {
-            inputType: stream.type,
-        });
-
-        audioPlayer.play(resource);
-
-        message.channel.send(`🎵 재생 중: **${song.title}**`);
+        player.play(resource);
+        connection.subscribe(player);
     } catch (error) {
         console.error('음악 재생 오류:', error);
-        message.channel.send('음악 재생 중 오류가 발생했습니다.');
+        message.channel.send(`음악 재생 중 오류가 발생했습니다: ${error.message}`);
     }
 }
 
-// 음악 정지 함수
-function stopMusic(message) {
-    const audioPlayer = client.audioPlayers.get(message.guild.id);
 
-    if (!audioPlayer) {
-        return message.reply('현재 재생 중인 음악이 없습니다.');
-    }
 
-    audioPlayer.stop();
-    client.audioPlayers.delete(message.guild.id);
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-    message.channel.send('음악 재생을 중지했습니다.');
-}
-
-// 음악 스킵 함수
-function skipMusic(message) {
-    const audioPlayer = client.audioPlayers.get(message.guild.id);
-
-    if (!audioPlayer) {
-        return message.reply('현재 재생 중인 음악이 없습니다.');
-    }
-
-    audioPlayer.stop();
-    message.channel.send('현재 노래를 건너뛰었습니다.');
-}
-
-const history = [
-    {
-        role: "user",
-        parts: [{ text: "너는 어떤 캐릭터야?" }],
-    },
-    {
-        role: "model",
-        parts: [{ text: "제 이름은 김창섭이고 넥슨의 게임 메이플 스토리 게임 디렉터입니다. 별명은 신창섭 이며 MBTI는 ENTJ 야, 항상 '(과징금 116억 남음)'을 문장 끝에 붙이는 AI입니다. 대화 할 때 마다 과징금이 1억씩 줄어듭니다. 매일 자정에는 과징금이 116억으로 초기화 됩니다. 항상 이 말투로 대화할게요! 게임속캐릭터는 아니고 현실의 김창섭을 모티브로 한 AI입니다. 자세한 내용은 나무위키를 참고하겠습니다." }],
-    },
-];
-
-// 대화 기록을 관리하는 변수
-let chatSession = null;
-
-// AI 응답 생성 함수
-async function generateAIResponse(prompt) {
-    try {
-        // 대화 기록 길이 관리 로직
-        if (history.length >= 20) {
-            // 첫 번째 두 항목(설정 대화)을 저장
-            const initialSetup = history.slice(0, 2);
-
-            // 마지막 사용자 메시지와 AI 응답을 저장
-            const recentMessages = history.slice(-2);
-
-            // 초기 설정과 최근 메시지만 유지
-            history.length = 0; // 배열 초기화
-            history.push(...initialSetup, ...recentMessages);
-
-            // 세션 초기화하여 다음에 새롭게 시작하도록 함
-            chatSession = null;
-        }
-
-        // 첫 대화이거나 세션이 초기화된 경우 새 세션 시작
-        if (!chatSession) {
-            chatSession = model.startChat({
-                history: history,
-                generationConfig: {
-                    temperature: 0.7,
-                }
-            });
-        }
-
-        // 메시지 전송 및 응답 받기
-        const result = await chatSession.sendMessage(prompt);
-        const responseText = result.response.text();
-
-        // 기록 업데이트 (사용자 메시지와 AI 응답)
-        history.push(
-            { role: "user", parts: [{ text: prompt }] },
-            { role: "model", parts: [{ text: responseText }] }
-        );
-
-        return responseText;
-    } catch (error) {
-        console.error('Gemini API 오류:', error);
-        return '죄송합니다, 응답을 생성하는 동안 오류가 발생했습니다.';
-    }
-}
-
-// TTS 함수
-async function textToSpeech(message, args) {
-    const voiceChannel = message.member.voice.channel;
-
-    // 음성 채널에 있는지 확인
-    if (!voiceChannel) {
-        return message.reply('먼저 음성 채널에 참가해주세요!');
-    }
-
-    // 텍스트 확인
-    if (!args.length) {
-        return message.reply('음성으로 변환할 텍스트를 입력해주세요!');
-    }
-
-    const text = args.join(' ');
-
-    try {
-        // 구글 TTS API URL 생성 (무료 버전)
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ko&q=${encodeURIComponent(text)}`;
-
-        // 음성 채널 연결
-        const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: message.guild.id,
-            adapterCreator: message.guild.voiceAdapterCreator,
-        });
-
-        // 오디오 플레이어 생성
-        const audioPlayer = createAudioPlayer();
-        connection.subscribe(audioPlayer);
-
-        // 오디오 리소스 생성 및 재생
-        const resource = createAudioResource(url);
-        audioPlayer.play(resource);
-
-        // 재생 완료 시 연결 해제
-        audioPlayer.on(AudioPlayerStatus.Idle, () => {
-            connection.destroy();
-        });
-
-        message.reply('텍스트를 음성으로 변환하여 재생합니다.');
-    } catch (error) {
-        console.error('TTS 오류:', error);
-        message.reply('텍스트를 음성으로 변환하는 동안 오류가 발생했습니다.');
-    }
-}
 
 // Nexon API
 async function maplestoryAPI(characterName, message) {
@@ -687,7 +498,7 @@ async function clawling(url, message, className, dateType, crawler) {
     // 설정 커스터마이징 (필요시)
     crawler.targetUrl = url;
     crawler.selector = `${className} > ul > li`;
-    crawler.titleSelector = 'p > a > span';  // 제목 선택자
+    crawler.titleSelector = `${className === '.event_board'? '.event_listMt' : 'p > a > span'}`;  // 제목 선택자
     crawler.dateSelector = `${dateType === '.date' ? dateType + ' p' : dateType + ' dl dd'} `;  // 날짜 선택자 .heart_date, date
     crawler.contentSelector = 'p > a';  // 내용 선택자는 없으므로 링크 정보를 가져오는 것으로 대체
     crawler.uniqueIdentifier = 'p > a';  // 고유 식별자가 없으므로 링크 URL을 이용
@@ -698,7 +509,50 @@ async function clawling(url, message, className, dateType, crawler) {
     await crawler.start(message);
 }
 
+client.on('ready', async () => {
+    await setup();
+    await sendBotEventMsg('931410650507403307', `${client.user.tag.substring(0, client.user.tag.indexOf('#'))} 디렉터가 온라인 상태입니다!`);
+    deployCommands();
+});
 
+// 봇이 연결 끊겼을 때 (인터넷 연결 문제 등으로 인한 연결 끊김)
+client.on('disconnect', (event) => {
+    sendBotEventMsg('931410650507403307', `${client.user.tag.substring(0, client.user.tag.indexOf('#'))} 디렉터가 서버점검 하러 가신 상태입니다!`);
+});
+
+process.on('SIGINT', async () => {
+
+    await sendBotEventMsg('931410650507403307', `${client.user.tag.substring(0, client.user.tag.indexOf('#'))} 디렉터가 서버점검 하러 가신 상태입니다!`);
+    // 필요한 정리 작업 수행
+    // 예: 데이터베이스 연결 종료, 캐시 저장 등
+
+    // Discord 클라이언트 연결 종료
+    client.destroy();
+    console.log('봇이 안전하게 종료되었습니다.');
+    process.exit(0); // 정상 종료 코드 (0)
+});
+
+function sendBotEventMsg(channelId, msg) {
+    return new Promise((resolve, reject) => {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+            console.log(msg);
+            channel.send(msg)
+                .then(() => resolve())
+                .catch(err => reject(err));
+        } else {
+            reject(new Error(`채널 ID ${channelId}를 찾을 수 없습니다.`));
+        }
+    });
+}
+
+async function setup() {
+    await play.setToken({
+        youtube: {
+            cookie: `LOGIN_INFO=AFmmF2swRQIgWRMVMKnhlYUnB32hyE2Wa_aLQMTH4Rnj2zgAjz8zP4YCIQDMXP4QnzIA7_AUqPtn0nUY1wNWfz7ZGv4VvN7LhKorJw:QUQ3MjNmeTNBY0p0WGNuN1lHaHB0Ry1IUlpsc0w2dzhsS2s4eF9iTUVqSENiSXJTbERfaHBKNkVoT1NEVVlnZG5LT1Fhc19ieTRESXhWdmc3cEZ4SUtrUFRMRTVLczhJeVI5Wm9HRjQ3bkRJN3kyM3ZZaVlvbFFEc2o3WllGREsteFNaT0FBeTREMk1tMmY3QnpkRXh5YmRxLS1WaHZiUEF3; HSID=AuikuULcJkZZbQS5y; SSID=AEEt0Bh3gHeVsRuoq; APISID=x3K9Nth-u4iV3bL2/AjRLSnCPaiXpO4C1s; SAPISID=6moc0Ta1GZnr86Zn/APO8ZpUixioQHPL5P; __Secure-1PAPISID=6moc0Ta1GZnr86Zn/APO8ZpUixioQHPL5P; __Secure-3PAPISID=6moc0Ta1GZnr86Zn/APO8ZpUixioQHPL5P; VISITOR_INFO1_LIVE=Xkl2FmCDZJc; VISITOR_PRIVACY_METADATA=CgJLUhIEGgAgSw%3D%3D; __Secure-1PSIDTS=sidts-CjEBEJ3XV5MPA0gzSoZ3nl-80r1f4CERqInHHkuw4USENq2CybBo2GL2MW_P3GUbNxo0EAA; __Secure-3PSIDTS=sidts-CjEBEJ3XV5MPA0gzSoZ3nl-80r1f4CERqInHHkuw4USENq2CybBo2GL2MW_P3GUbNxo0EAA; __Secure-ROLLOUT_TOKEN=CPaQ_5qcqbafiQEQ4dHD_-bdiwMYlYyR6I6pjAM%3D; _gcl_au=1.1.1412149294.1743039144; PREF=f6=80&tz=Asia.Seoul&f5=30000&f7=100&repeat=NONE; SID=g.a000vQjdNm2O-c6-rrr1_tKzbuPV-RRtGjxxDNj_vkGVS5Wu7YqhlO1a_4q5odELrro1Z5QG_wACgYKAaQSARYSFQHGX2Mi970zF9d6n885tlW6CYe8dxoVAUF8yKqePJN_d7cAqjfkvqUD8UgB0076; __Secure-1PSID=g.a000vQjdNm2O-c6-rrr1_tKzbuPV-RRtGjxxDNj_vkGVS5Wu7YqhDSAFpwyJF-Q5rzKpBZgS4AACgYKAZgSARYSFQHGX2Mikp7jPcj5xy9d6A7aw5YKjxoVAUF8yKqRKAkYqIKGb3l3vxMpCIxP0076; __Secure-3PSID=g.a000vQjdNm2O-c6-rrr1_tKzbuPV-RRtGjxxDNj_vkGVS5Wu7YqhzpG-cMEHkkYtZ16VhrYcHwACgYKASMSARYSFQHGX2Mi5stO7XvcDWa-jwl_uMHK4BoVAUF8yKq8gMvrT80NNspKDWzJ_Zhn0076; YSC=7gHxyupB4YI; SIDCC=AKEyXzWNGdPmI1FL6ccPT-1_A97_qBp-AektVFq2P_vI-uUWNSDEy32s-Lwx7yl9Kjgz-XqEVw; __Secure-1PSIDCC=AKEyXzUw6l6VTrmMT1-hGCEe6Splc6iqm7LGlC5FtAZHmrdsV86-Ery0LXcb8jr4wG6FYPhrFow; __Secure-3PSIDCC=AKEyXzWuyuT-47Sv3hm0_vxQSBN4F0S_cy3Gx47AqrN1l5OUr2jcwqKCeBJdhJFdycoCF9SOUuQ`
+        }
+    });
+}
 
 // 봇 로그인
 client.login(process.env.DISCORD_TOKEN);
