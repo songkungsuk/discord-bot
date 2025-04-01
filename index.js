@@ -12,7 +12,7 @@ const NoticeCrawling = require('./maple/noticeCrawling');
 // utils
 const { generateAIResponse } = require('./utils/ai');
 const { textToSpeech } = require('./utils/tts');
-const { handleClearCommand, handleUserClearCommand} = require('./utils/clear');
+const { handleClearCommand, handleUserClearCommand } = require('./utils/clear');
 
 require('dotenv').config();
 
@@ -175,7 +175,58 @@ client.on('messageCreate', async (message) => {
             cashCrawler.stop();
         }
         else if (command === 'star') {
-          
+            // 스타포스 강화 시뮬레이션
+            const usage = '!star [현재 스타포스] [타겟 스타포스] [장비레벨] [파괴방지여부(Y/N)] [이벤트(1=30% 할인, 2=5, 10, 15성 100%, 3=파괴방지)]';
+
+            // 인자 확인
+            if (args.length < 3) {
+                return message.reply(`사용법: ${usage}`);
+            }
+
+            const currentStar = parseInt(args[0]);
+            const targetStar = parseInt(args[1]);
+            const itemLevel = parseInt(args[2]);
+            const preventDestruction = args[3]?.toUpperCase() === 'Y';
+            const eventType = args[4] ? parseInt(args[4]) : 0;
+
+            // 유효성 검사
+            if (isNaN(currentStar) || isNaN(targetStar) || isNaN(itemLevel)) {
+                return message.reply('스타포스와 장비 레벨은 숫자로 입력해주세요.');
+            }
+
+            if (currentStar < 0 || currentStar > 30 || targetStar < 0 || targetStar > 30) {
+                return message.reply('스타포스는 0~30 사이로 입력해주세요.');
+            }
+
+            if (currentStar >= targetStar) {
+                return message.reply('타겟 스타포스는 현재 스타포스보다 높아야 합니다.');
+            }
+
+            // 스타포스 시뮬레이션
+            try {
+                const result = simulateStarforce(currentStar, targetStar, itemLevel, preventDestruction, eventType);
+
+                // 결과 메시지 생성
+                let resultMessage = '**🌟 스타포스 강화 시뮬레이션 결과 🌟**\n';
+                resultMessage += `장비 레벨: ${itemLevel}\n`;
+                resultMessage += `시작 스타포스: ${currentStar} → 목표 스타포스: ${targetStar}\n`;
+                resultMessage += `파괴방지 사용: ${preventDestruction ? '예' : '아니오'}\n`;
+                resultMessage += `이벤트 적용: ${getEventName(eventType)}\n\n`;
+
+                resultMessage += `총 시도 횟수: ${result.attempts}번\n`;
+                resultMessage += `성공 횟수: ${result.success}번\n`;
+                resultMessage += `실패 횟수: ${result.failure}번 (유지: ${result.maintain}번, 하락: ${result.decrease}번)\n`;
+                resultMessage += `파괴 횟수: ${result.destroyed}번\n\n`;
+
+                resultMessage += `총 비용: ${result.totalCost.toLocaleString()}메소\n`;
+                resultMessage += `장비 복구 비용: ${result.restorationCost.toLocaleString()}메소\n`;
+                resultMessage += `최종 비용: ${(result.totalCost + result.restorationCost).toLocaleString()}메소`;
+
+                message.channel.send(resultMessage);
+            } catch (error) {
+                console.error('스타포스 시뮬레이션 오류:', error);
+                message.reply('스타포스 시뮬레이션 중 오류가 발생했습니다.');
+            }
         }
         else if (command === '노래') {
             try {
@@ -400,6 +451,156 @@ async function playMusic(message, args) {
 }
 
 
+// 스타포스 확률 및 비용 계산 함수
+function getStarforceInfo(star, itemLevel, preventDestruction, eventType) {
+    // 성공 확률
+    let successRate;
+    if (star < 3) successRate = 95;
+    else if (star < 15) successRate = 100 - 5 * Math.floor((star + 1) / 5) - 5;
+    else if (star === 15) successRate = 30;
+    else if (star === 16) successRate = 30;
+    else if (star === 17) successRate = 30;
+    else if (star === 18) successRate = 30;
+    else if (star === 19) successRate = 30;
+    else if (star === 20) successRate = 30;
+    else if (star === 21) successRate = 30;
+    else if (star === 22) successRate = 3;
+    else if (star === 23) successRate = 2;
+    else if (star === 24) successRate = 1;
+    else successRate = 0;
+
+    // 이벤트 - 5, 10, 15성 100% 성공
+    if (eventType === 2 && (star === 5 || star === 10 || star === 15)) {
+        successRate = 100;
+    }
+
+    // 파괴 확률
+    let destructionRate = 0;
+    if (star >= 15 && star <= 16) destructionRate = 2.1;
+    else if (star >= 17 && star <= 19) destructionRate = 2.8;
+    else if (star >= 20 && star <= 21) destructionRate = 7.0;
+    else if (star >= 22 && star <= 24) destructionRate = 19.4;
+
+    // 파괴방지 사용 또는 이벤트
+    if ((preventDestruction && star >= 15 && star <= 16) || eventType === 3) {
+        destructionRate = 0;
+    }
+
+    // 스타포스 비용 계산
+    let cost;
+    if (star < 10) {
+        cost = Math.floor(1000 + Math.pow(itemLevel, 3) * (star + 1) / 25);
+    } else if (star < 15) {
+        cost = Math.floor(1000 + Math.pow(itemLevel, 3) * Math.pow(star + 1, 2.7) / 400);
+    } else {
+        cost = Math.floor(1000 + Math.pow(itemLevel, 3) * Math.pow(star + 1, 2.7) / 200);
+    }
+
+    // 파괴방지 추가 비용
+    if (preventDestruction && star >= 15 && star <= 16) {
+        cost *= 2;
+    }
+
+    // 이벤트 - 30% 할인
+    if (eventType === 1) {
+        cost = Math.floor(cost * 0.7);
+    }
+
+    // 장비 파괴 시 복구 비용 (실제 메이플과는 다를 수 있음)
+    const restorationCost = Math.floor(Math.pow(itemLevel, 3) * 100);
+
+    return {
+        successRate,
+        destructionRate,
+        maintainRate: star > 15 ? 0 : (100 - successRate - destructionRate),
+        decreaseRate: star <= 15 ? 0 : (100 - successRate - destructionRate),
+        cost,
+        restorationCost
+    };
+}
+
+// 스타포스 시뮬레이션 함수
+function simulateStarforce(currentStar, targetStar, itemLevel, preventDestruction, eventType) {
+    let star = currentStar;
+    let attempts = 0;
+    let success = 0;
+    let failure = 0;
+    let maintain = 0;
+    let decrease = 0;
+    let destroyed = 0;
+    let totalCost = 0;
+    let restorationCost = 0;
+
+    // chancetime 관련 변수
+    let consecutiveFailures = 0;
+    const chanceTimeThreshold = 2; // 2번 연속 실패 시 다음 시도 100% 성공
+
+    while (star < targetStar) {
+        attempts++;
+
+        // 현재 스타에 대한 정보 가져오기
+        const { successRate, destructionRate, maintainRate, decreaseRate, cost } = getStarforceInfo(star, itemLevel, preventDestruction, eventType);
+
+        // 비용 추가
+        totalCost += cost;
+
+        // 찬스타임인 경우 100% 성공
+        if (consecutiveFailures >= chanceTimeThreshold && star >= 10 && star <= 30) {
+            star++;
+            success++;
+            consecutiveFailures = 0;
+            continue;
+        }
+
+        // 확률 계산
+        const roll = Math.random() * 100;
+
+        if (roll < successRate) {
+            // 성공
+            star++;
+            success++;
+            consecutiveFailures = 0;
+        } else if (roll < successRate + destructionRate) {
+            // 파괴
+            destroyed++;
+            star = 0; // 파괴 시 12성으로 초기화
+            restorationCost += getStarforceInfo(star, itemLevel, false, 0).restorationCost;
+            consecutiveFailures = 0;
+        } else {
+            //실패 유지
+            failure++;
+            maintain++;
+            consecutiveFailures++;
+        }
+
+        // 10→11, 15→16, 20→21에서는 실패 시 별 하락 없음
+        if ((star === 10 || star === 15 || star === 20) && roll >= successRate && roll < successRate + destructionRate + decreaseRate) {
+            star = star; // 별 유지
+        }
+    }
+
+    return {
+        attempts,
+        success,
+        failure,
+        maintain,
+        decrease,
+        destroyed,
+        totalCost,
+        restorationCost
+    };
+}
+
+// 이벤트 타입에 대한 설명 반환
+function getEventName(eventType) {
+    switch (eventType) {
+        case 1: return '30% 할인';
+        case 2: return '5, 10, 15성 100% 성공';
+        case 3: return '파괴 방지';
+        case 3: return '파괴 확률 30퍼 감소';
+        default: return '없음';
+    }
+}
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -498,7 +699,7 @@ async function clawling(url, message, className, dateType, crawler) {
     // 설정 커스터마이징 (필요시)
     crawler.targetUrl = url;
     crawler.selector = `${className} > ul > li`;
-    crawler.titleSelector = `${className === '.event_board'? '.event_listMt' : 'p > a > span'}`;  // 제목 선택자
+    crawler.titleSelector = `${className === '.event_board' ? '.event_listMt' : 'p > a > span'}`;  // 제목 선택자
     crawler.dateSelector = `${dateType === '.date' ? dateType + ' p' : dateType + ' dl dd'} `;  // 날짜 선택자 .heart_date, date
     crawler.contentSelector = 'p > a';  // 내용 선택자는 없으므로 링크 정보를 가져오는 것으로 대체
     crawler.uniqueIdentifier = 'p > a';  // 고유 식별자가 없으므로 링크 URL을 이용
