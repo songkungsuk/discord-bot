@@ -69,44 +69,77 @@ client.on('messageCreate', async (message) => {
         }
         // 음악 재생 명령어
         else if (command === 'play') {
-            if (!message.member.voice?.channel) return message.channel.send('Connect to a Voice Channel')
+            // 사용자가 음성 채널에 있는지 확인
+            if (!message.member.voice?.channel) return message.channel.send('음성 채널에 먼저 접속해 주세요!');
 
-            const connection = joinVoiceChannel({
-                channelId: message.member.voice.channel.id,
-                guildId: message.guild.id,
-                adapterCreator: message.guild.voiceAdapterCreator
-            })
+            try {
+                // 음성 채널에 연결
+                const connection = joinVoiceChannel({
+                    channelId: message.member.voice.channel.id,
+                    guildId: message.guild.id,
+                    adapterCreator: message.guild.voiceAdapterCreator
+                });
 
-            let arguments = message.content.split('play ')[1].split(' ')[0]
-
-            let stream = await play.stream(arguments);
-
-            /*
-            OR if you want to get info about youtube link and then stream it
-    
-            let yt_info = await play.video_info(args)
-            console.log(yt_info.video_details.title) 
-            let stream = await play.stream_from_info(yt_info)
-            */
-
-            let resource = createAudioResource(stream.stream, {
-                inputType: stream.type
-            })
-
-            let player = createAudioPlayer({
-                behaviors: {
-                    noSubscriber: NoSubscriberBehavior.Play
+                // 명령어에서 링크 또는 검색어 추출
+                let query = '';
+                if (message.content.includes(' ')) {
+                    query = message.content.substring(message.content.indexOf(' ')).trim();
                 }
-            })
 
-            player.play(resource);
+                if (!query) {
+                    return message.channel.send('YouTube 링크나 노래 제목을 입력해 주세요!');
+                }
 
-            connection.subscribe(player);
+                message.channel.send(`🔍 검색 중: **${query}**`);
 
-            player.on('error', console.error);
-            player.on('stateChange', (oldState, newState) => {
-                message.channel.send(`🔄 Audio player transitioned from ${oldState.status} to ${newState.status}`); console.log(`Audio player transitioned from ${oldState.status} to ${newState.status}`);
-            });
+                // play-dl을 사용하여 스트림 얻기
+                const stream = await play.stream(query);
+
+                // 오디오 리소스 생성
+                const resource = createAudioResource(stream.stream, {
+                    inputType: stream.type
+                });
+
+                // 오디오 플레이어 생성
+                const player = createAudioPlayer({
+                    behaviors: {
+                        noSubscriber: NoSubscriberBehavior.Play
+                    }
+                });
+
+                // 리소스 재생
+                player.play(resource);
+
+                // 연결에 플레이어 구독
+                connection.subscribe(player);
+
+                // 플레이어 이벤트 처리
+                player.on('error', error => {
+                    console.error('오디오 재생 오류:', error);
+                    message.channel.send(`재생 오류: ${error.message}`);
+                });
+
+                player.on('stateChange', (oldState, newState) => {
+                    console.log(`오디오 플레이어: ${oldState.status} -> ${newState.status}`);
+                });
+
+                // 노래 정보 가져와서 표시
+                try {
+                    const info = await play.video_info(query);
+                    if (info && info.video_details) {
+                        message.channel.send(`🎵 재생 중: **${info.video_details.title}**`);
+                    } else {
+                        message.channel.send(`🎵 노래 재생 중...`);
+                    }
+                } catch (infoError) {
+                    message.channel.send(`🎵 노래 재생 중...`);
+                    console.error('노래 정보를 가져오는 중 오류 발생:', infoError);
+                }
+
+            } catch (error) {
+                console.error('음악 명령어 처리 중 오류 발생:', error);
+                message.channel.send(`❌ 오류 발생: ${error.message}`);
+            }
             //playMusic(message, args);
         }
         // 음악 정지 명령어
@@ -175,8 +208,8 @@ client.on('messageCreate', async (message) => {
             cashCrawler.stop();
         }
         else if (command === 'star') {
-            // 스타포스 강화 시뮬레이션
-            const usage = '!star [현재 스타포스] [타겟 스타포스] [장비레벨] [파괴방지여부(Y/N)] [이벤트(1=30% 할인, 2=5, 10, 15성 100%, 3=파괴방지)]';
+            // 스타포스 강화 시뮬레이션 (2025 업데이트 반영)
+            const usage = '!star [현재 스타포스] [타겟 스타포스] [장비레벨] [파괴방지여부(Y/N)] [이벤트(1=30% 할인, 2=파괴확률 30% 감소, 3=샤이닝 스타포스)]';
 
             // 인자 확인
             if (args.length < 3) {
@@ -215,7 +248,7 @@ client.on('messageCreate', async (message) => {
 
                 resultMessage += `총 시도 횟수: ${result.attempts}번\n`;
                 resultMessage += `성공 횟수: ${result.success}번\n`;
-                resultMessage += `실패 횟수: ${result.failure}번 (유지: ${result.maintain}번, 하락: ${result.decrease}번)\n`;
+                resultMessage += `실패 횟수: ${result.failure}번\n`;
                 resultMessage += `파괴 횟수: ${result.destroyed}번\n\n`;
 
                 resultMessage += `총 비용: ${result.totalCost.toLocaleString()}메소\n`;
@@ -451,69 +484,96 @@ async function playMusic(message, args) {
 }
 
 
-// 스타포스 확률 및 비용 계산 함수
+// 스타포스 확률 및 비용 계산 함수 (2025 업데이트 반영)
 function getStarforceInfo(star, itemLevel, preventDestruction, eventType) {
-    // 성공 확률
+    // 성공 확률 (2025 개편 확률표 기준)
     let successRate;
     if (star < 3) successRate = 95;
-    else if (star < 15) successRate = 100 - 5 * Math.floor((star + 1) / 5) - 5;
+    else if (star < 10) successRate = 100 - 5 * Math.floor((star + 1) / 5) - 5;
+    else if (star < 15) successRate = 50 - 5 * Math.floor((star - 9) / 5);
     else if (star === 15) successRate = 30;
     else if (star === 16) successRate = 30;
-    else if (star === 17) successRate = 30;
-    else if (star === 18) successRate = 30;
-    else if (star === 19) successRate = 30;
+    else if (star === 17) successRate = 15;
+    else if (star === 18) successRate = 15;
+    else if (star === 19) successRate = 15;
     else if (star === 20) successRate = 30;
-    else if (star === 21) successRate = 30;
-    else if (star === 22) successRate = 3;
-    else if (star === 23) successRate = 2;
-    else if (star === 24) successRate = 1;
+    else if (star === 21) successRate = 15;
+    else if (star === 22) successRate = 15;
+    else if (star <= 25) successRate = 10;
+    else if (star === 26) successRate = 7;
+    else if (star === 27) successRate = 5;
+    else if (star === 28) successRate = 3;
+    else if (star === 29) successRate = 1;
     else successRate = 0;
 
-    // 이벤트 - 5, 10, 15성 100% 성공
-    if (eventType === 2 && (star === 5 || star === 10 || star === 15)) {
-        successRate = 100;
+    // 파괴 확률 (2025 개편 확률표 기준)
+    let destructionRate = 0;
+    if (star === 15) destructionRate = 2.1;
+    else if (star === 16) destructionRate = 2.1;
+    else if (star === 17) destructionRate = 6.8;
+    else if (star === 18) destructionRate = 6.8;
+    else if (star === 19) destructionRate = 8.5;
+    else if (star === 20) destructionRate = 10.5;
+    else if (star === 21) destructionRate = 12.75;
+    else if (star === 22) destructionRate = 17.0;
+    else if (star <= 25) destructionRate = 18.0;
+    else if (star === 26) destructionRate = 18.6;
+    else if (star === 27) destructionRate = 19.0;
+    else if (star === 28) destructionRate = 19.4;
+    else if (star === 29) destructionRate = 19.8;
+
+    // 파괴 확률 30% 감소 이벤트 적용 (21성 이하일 때)
+    if ((eventType === 2 || eventType === 3) && star <= 21) {
+        destructionRate *= 0.7;
     }
 
-    // 파괴 확률
-    let destructionRate = 0;
-    if (star >= 15 && star <= 16) destructionRate = 2.1;
-    else if (star >= 17 && star <= 19) destructionRate = 2.8;
-    else if (star >= 20 && star <= 21) destructionRate = 7.0;
-    else if (star >= 22 && star <= 24) destructionRate = 19.4;
-
-    // 파괴방지 사용 또는 이벤트
-    if ((preventDestruction && star >= 15 && star <= 16) || eventType === 3) {
+    // 파괴방지 사용 (15, 16, 17성에 적용 가능)
+    if (preventDestruction && (star === 15 || star === 16 || star === 17)) {
         destructionRate = 0;
     }
 
-    // 스타포스 비용 계산
+    // 실패(유지) 확률
+    const failRate = 100 - successRate - destructionRate;
+
+    // 스타포스 비용 계산 (레벨별, 성급별)
     let cost;
+    const levelFactor = Math.pow(itemLevel, 3) * (star + 1) / 25;
+
     if (star < 10) {
-        cost = Math.floor(1000 + Math.pow(itemLevel, 3) * (star + 1) / 25);
+        cost = Math.floor(1000 + levelFactor);
     } else if (star < 15) {
-        cost = Math.floor(1000 + Math.pow(itemLevel, 3) * Math.pow(star + 1, 2.7) / 400);
+        cost = Math.floor(1000 + levelFactor * Math.pow(star + 1, 2.7) / 400);
+    } else if (star < 20) {
+        // 17~19성 강화 시 메소 증가 (개편 내용)
+        let multiplier = 1;
+        if (star >= 17 && star <= 19) multiplier = 1.5;
+
+        cost = Math.floor(multiplier * (1000 + levelFactor * Math.pow(star + 1, 2.7) / 200));
     } else {
-        cost = Math.floor(1000 + Math.pow(itemLevel, 3) * Math.pow(star + 1, 2.7) / 200);
+        // 21성 강화 시 메소 증가 (개편 내용)
+        let multiplier = 1;
+        if (star === 21) multiplier = 1.5;
+
+        cost = Math.floor(multiplier * (1000 + levelFactor * Math.pow(star + 1, 2.7) / 200));
     }
 
-    // 파괴방지 추가 비용
-    if (preventDestruction && star >= 15 && star <= 16) {
-        cost *= 2;
+    // 파괴방지 추가 비용 (200%로 증가)
+    if (preventDestruction && (star === 15 || star === 16 || star === 17)) {
+        cost *= 3; // 기본 + 추가 200%
     }
 
     // 이벤트 - 30% 할인
-    if (eventType === 1) {
+    if (eventType === 1 || eventType === 3) {
         cost = Math.floor(cost * 0.7);
     }
 
-    // 장비 파괴 시 복구 비용 (실제 메이플과는 다를 수 있음)
-    const restorationCost = Math.floor(Math.pow(itemLevel, 3) * 100);
+    // 장비 파괴 시 복구 비용
+    const restorationCost = 0;
 
     return {
         successRate,
         destructionRate,
-        maintainRate: star > 15 ? 0 : (100 - successRate - destructionRate),
-        decreaseRate: star <= 15 ? 0 : (100 - successRate - destructionRate),
+        failRate,
         cost,
         restorationCost
     };
@@ -525,13 +585,11 @@ function simulateStarforce(currentStar, targetStar, itemLevel, preventDestructio
     let attempts = 0;
     let success = 0;
     let failure = 0;
-    let maintain = 0;
-    let decrease = 0;
     let destroyed = 0;
     let totalCost = 0;
     let restorationCost = 0;
 
-    // chancetime 관련 변수
+    // 찬스타임 관련 변수
     let consecutiveFailures = 0;
     const chanceTimeThreshold = 2; // 2번 연속 실패 시 다음 시도 100% 성공
 
@@ -539,13 +597,13 @@ function simulateStarforce(currentStar, targetStar, itemLevel, preventDestructio
         attempts++;
 
         // 현재 스타에 대한 정보 가져오기
-        const { successRate, destructionRate, maintainRate, decreaseRate, cost } = getStarforceInfo(star, itemLevel, preventDestruction, eventType);
+        const { successRate, destructionRate, failRate, cost } = getStarforceInfo(star, itemLevel, preventDestruction, eventType);
 
         // 비용 추가
         totalCost += cost;
 
-        // 찬스타임인 경우 100% 성공
-        if (consecutiveFailures >= chanceTimeThreshold && star >= 10 && star <= 30) {
+        // 찬스타임인 경우 100% 성공 (10성 이하에서만 적용)
+        if (consecutiveFailures >= chanceTimeThreshold && star <= 10) {
             star++;
             success++;
             consecutiveFailures = 0;
@@ -563,19 +621,20 @@ function simulateStarforce(currentStar, targetStar, itemLevel, preventDestructio
         } else if (roll < successRate + destructionRate) {
             // 파괴
             destroyed++;
-            star = 0; // 파괴 시 12성으로 초기화
+            star = 12; // 파괴 시 12성으로 초기화
             restorationCost += getStarforceInfo(star, itemLevel, false, 0).restorationCost;
             consecutiveFailures = 0;
         } else {
-            //실패 유지
+            // 실패 (유지) - 2025 업데이트로 하락 없어짐
             failure++;
-            maintain++;
             consecutiveFailures++;
         }
 
-        // 10→11, 15→16, 20→21에서는 실패 시 별 하락 없음
-        if ((star === 10 || star === 15 || star === 20) && roll >= successRate && roll < successRate + destructionRate + decreaseRate) {
-            star = star; // 별 유지
+        // 썬데이 메이플 - 5, 10, 15성에서는 100% 성공 (이벤트 타입 3인 경우)
+        if (eventType === 3 && (star === 5 || star === 10 || star === 15)) {
+            star++;
+            success++;
+            consecutiveFailures = 0;
         }
     }
 
@@ -583,8 +642,6 @@ function simulateStarforce(currentStar, targetStar, itemLevel, preventDestructio
         attempts,
         success,
         failure,
-        maintain,
-        decrease,
         destroyed,
         totalCost,
         restorationCost
@@ -595,9 +652,8 @@ function simulateStarforce(currentStar, targetStar, itemLevel, preventDestructio
 function getEventName(eventType) {
     switch (eventType) {
         case 1: return '30% 할인';
-        case 2: return '5, 10, 15성 100% 성공';
-        case 3: return '파괴 방지';
-        case 3: return '파괴 확률 30퍼 감소';
+        case 2: return '파괴 확률 30% 감소';
+        case 3: return '샤이닝 스타포스 (30% 할인 + 파괴 확률 30% 감소 + 5/10/15성 100% 성공)';
         default: return '없음';
     }
 }
