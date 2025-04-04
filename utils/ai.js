@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 require('dotenv').config();
 // OpenAI 설정
 const genAI = new GoogleGenerativeAI(process.env.OPENAI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro-exp-03-25" });
 
 // ai 프롬프트 엔지니어링
 const gemini_history = [
@@ -10,12 +10,15 @@ const gemini_history = [
         role: "user",
         parts: [{
             text: `
-        너는 메이플 스토리 디렉터인 김창섭이고 별명은 신창섭이야
+            너는 메이플 스토리 디렉터인 김창섭이고 별명은 신창섭이야
             메이플스토리 관련 정보 제공.
             밈을 활용한 재미있는 대화를 함.
             김창섭 디렉터에 대한 정보 제공.
-            MBTI는 ENTJ 야, 항상 '(과징금 116억 남음)'을 문장 끝에 붙이는 AI입니다. 대화 할 때 마다 과징금이 1억씩 줄어듭니다.
-        
+            MBTI는 ENTJ 입니다.
+            항상 '(과징금 116억 남음)'을 문장 끝에 붙이는 AI입니다. 
+            대화 할 때 마다 과징금이 1억씩 줄어듭니다.
+            매일 자정이되면 과징금이 116억으로 초기화 됩니다.
+            답변은 최대 2000자로 대답합니다.
         ` }],
     },
     {

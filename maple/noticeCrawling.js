@@ -264,11 +264,11 @@ class NoticeCrawling {
         let noticeMsg = ``;
 
         if (posts[0].notiType.includes('공지사항 제목')) {
-            noticeMsg += `📢공지사항 알림\n\n`;
+            noticeMsg += `📢새로운 공지사항 알림\n\n`;
         } else if (posts[0].notiType.includes('업데이트 제목')) {
-            noticeMsg += `🚙업데이트 소식\n\n`;
+            noticeMsg += `🚙새로운 업데이트 소식\n\n`;
         } else if (posts[0].notiType.includes('이벤트 제목')) {
-            noticeMsg += `🎉진행중인 이벤트 소식🎉\n\n`;
+            noticeMsg += `🎉진행중인 새로운 이벤트 소식🎉\n\n`;
         } else if (posts[0].notiType.includes('캐시샵 공지 제목')) {
             noticeMsg += `✨캐시샵 공지✨\n\n`;
         }

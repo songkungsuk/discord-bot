@@ -1,6 +1,6 @@
 // 필요한 패키지 불러오기
 
-const { Client, GatewayIntentBits, Partials, Collection, REST, Routes, ApplicationCommandOptionType } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Collection, REST, Routes, ApplicationCommandOptionType, ActivityType} = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior } = require('@discordjs/voice');
 // 음악
 const play = require('play-dl');
@@ -769,12 +769,11 @@ async function clawling(url, message, className, dateType, crawler) {
 client.on('ready', async () => {
     await setup();
     await sendBotEventMsg('931410650507403307', `${client.user.tag.substring(0, client.user.tag.indexOf('#'))} 디렉터가 온라인 상태입니다!`);
-    deployCommands();
-});
 
-// 봇이 연결 끊겼을 때 (인터넷 연결 문제 등으로 인한 연결 끊김)
-client.on('disconnect', (event) => {
-    sendBotEventMsg('931410650507403307', `${client.user.tag.substring(0, client.user.tag.indexOf('#'))} 디렉터가 서버점검 하러 가신 상태입니다!`);
+    // 상태 설정하기
+    // 최신 버전에서의 상태 설정 방법
+    client.user.setActivity('MapleStory 정상화', { type: ActivityType.Playing });
+    deployCommands();
 });
 
 process.on('SIGINT', async () => {
@@ -782,7 +781,7 @@ process.on('SIGINT', async () => {
     await sendBotEventMsg('931410650507403307', `${client.user.tag.substring(0, client.user.tag.indexOf('#'))} 디렉터가 서버점검 하러 가신 상태입니다!`);
     // 필요한 정리 작업 수행
     // 예: 데이터베이스 연결 종료, 캐시 저장 등
-
+    client.user.setActivity('서버점검', { type: ActivityType.Playing });
     // Discord 클라이언트 연결 종료
     client.destroy();
     console.log('봇이 안전하게 종료되었습니다.');
@@ -810,6 +809,5 @@ async function setup() {
         }
     });
 }
-
 // 봇 로그인
 client.login(process.env.DISCORD_TOKEN);
